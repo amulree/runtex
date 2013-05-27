@@ -1,0 +1,156 @@
+#!/bin/bash
+
+#    runtex: command line utility to simplify TeX rendering
+#
+#    version 0.1
+#
+#    Copyright (C) 2013 amulree.net
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+function print_help {
+    cat<<EOF
+usage:
+    runtex -[dhv] <filename>
+    
+options:
+    d    display rendered file
+    h    show this help info
+    v    show verbose output
+EOF
+}
+
+function print_env {
+    echo tex: $TEX_FILE.tex
+    echo bib: $BIB_FILE.bib
+    echo render: $RENDER
+    echo display: $DISPLAY_FILE
+    echo verbose: $VERBOSE
+    echo working directory: `pwd`
+    echo files: `ls`
+}
+
+function cleanfile {
+    if [ -f $1.$2 ]; then
+        if [ $VERBOSE -gt 0 ]; then
+            echo 'Removing: '$1'.'$2
+        fi
+        rm $1.$2
+    fi
+}
+
+function mkbib {
+    if [ -f $2.bib ]; then
+        if [ $VERBOSE -gt 0 ]; then
+            echo making bibliography: $2.bib
+        fi
+        bibtex $1.aux
+    fi
+}
+
+function mkidx {
+    if [ -f $1.idx ]; then
+        makeindex $1
+    fi
+}
+
+function showpdf {
+    if [ -f $1.pdf ]; then
+        evince $1.pdf &
+    fi
+}
+
+function cleanfiles {
+    if [ $VERBOSE -gt 0 ]; then
+        echo "cleaning files ..."
+    fi
+    cleanfile $1 'aux'
+    cleanfile $1 'bbl'
+    cleanfile $1 'blg'
+    cleanfile $1 'idx'
+    cleanfile $1 'ilg'
+    cleanfile $1 'ind'
+    cleanfile $1 'lof'
+    cleanfile $1 'log'
+    cleanfile $1 'toc'
+    cleanfile 'texput' 'log'
+}
+
+
+function render {
+    cleanfiles $TEX_FILE
+    if [ $VERBOSE -gt 0 ]; then
+        $RENDER -halt-on-error $TEX_FILE.tex
+        mkbib $TEX_FILE $BIB_FILE
+        mkidx $TEX_FILE
+        $RENDER -halt-on-error $TEX_FILE.tex
+        $RENDER -halt-on-error $TEX_FILE.tex
+    else
+        $RENDER -halt-on-error $TEX_FILE.tex 1> /dev/null
+        mkbib $TEX_FILE $BIB_FILE 1> /dev/null
+        mkidx $TEX_FILE 1> /dev/null
+        $RENDER -halt-on-error $TEX_FILE.tex 1> /dev/null
+        $RENDER -halt-on-error $TEX_FILE.tex 1> /dev/null
+    fi
+    cleanfiles $TEX_FILE
+    if [ $DISPLAY_FILE -gt 0 ]; then
+        showpdf $TEX_FILE
+    fi
+}
+
+function run {
+    if [ $VERBOSE -gt 0 ]; then
+        print_env
+    fi
+    render
+}
+
+
+# MAIN
+args=("$@")
+
+VERBOSE=0
+DISPLAY_FILE=0
+RENDER='xelatex'
+
+while getopts "dhvr:" OPTION; do
+  case "$OPTION" in
+    d)
+      DISPLAY_FILE=1
+      ;;
+      
+    h)
+      print_help
+      exit
+      ;;
+      
+    r)
+      RENDER="${OPTARG}"
+      ;;
+      
+    v)
+      VERBOSE=1
+      ;;
+      
+  esac
+done
+
+if [ $# == 0 ]; then
+    print_help
+    exit
+else
+    TEX_FILE=${args[$#-1]%.}
+    BIB_FILE=$(grep -oP '\\bibliography{\K[^}]+' $TEX_FILE.tex)
+    run
+fi
